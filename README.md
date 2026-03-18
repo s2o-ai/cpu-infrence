@@ -17,6 +17,7 @@ This is not a general replacement for GPU inference at all model scales. It targ
 | [Investor Pitch](docs/investor-pitch.md) | Investors, CTOs, board members, business buyers | Market opportunity, competitive landscape, go-to-market strategy, funding requirements, financials |
 | [Technical Spec](docs/technical-spec.md) | Engineers, technical evaluators, architecture reviewers | GPU/CPU analysis, LUT innovation, CPU architectures, optimization techniques, benchmarking methodology |
 | [Operations Plan](docs/operations-plan.md) | Internal team, ops leads, hiring managers | Product architecture, execution plan, risks, key metrics, team & hiring |
+| [Technical Implementation Plan](docs/technical-implementation-plan.md) | Engineers, founders executing the build | Step-by-step tasks per phase, verification criteria, testing strategy, security checklists, dependency graph |
 
 ---
 
