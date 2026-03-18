@@ -30,22 +30,21 @@ We are building a production-grade AI inference platform that runs 7B-13B parame
 | GCC / Clang | 12+ / 15+ | C/C++ compilation with `-march=native` for SIMD intrinsics |
 | CMake | 3.20+ | Build system for inference engine |
 | Python | 3.10+ | API server, quantization pipeline, benchmarking scripts |
-| Rust | 1.70+ (optional) | CLI tooling, performance-critical utilities |
 | Docker | 24+ | Containerized deployment, CI builds |
-| kubectl | 1.28+ | Kubernetes deployment (Phase 3+) |
-| Helm | 3.12+ | Kubernetes package management (Phase 3+) |
 | Git | 2.40+ | Version control |
-| Node.js | 20 LTS | Model management UI (Phase 2+) |
+
+**Added later as needed:**
+- **Node.js 20 LTS** — Model management UI (Phase 2+)
+- **kubectl 1.28+ / Helm 3.12+** — Kubernetes deployment (Phase 3+)
 
 ### 2.2 Cloud Accounts & Infrastructure
 
 | Account | Purpose | When Needed | Estimated Cost |
 |---------|---------|-------------|---------------|
-| AWS | 3 reference hardware instances for benchmarking | Day 1 | $3-5K/month |
-| GitHub Organization | Code hosting, CI/CD (Actions), project management | Day 1 | Free (public repos) |
-| Vanta or Drata | Compliance automation (SOC2/HIPAA) | Month 1 | $1.5-2K/month |
+| GitHub Organization | Code hosting, CI/CD (Actions), project management | Day 1 | Free tier or $4/user/month (Team) |
 | HuggingFace | Model hub access, model downloads | Day 1 | Free |
-| PyPI | CLI package distribution | Month 2 | Free |
+| AWS | Reference hardware instances for benchmarking | When benchmarking begins | Spot instances recommended to reduce cost |
+| Vanta or Drata | Compliance automation (SOC2/HIPAA) | Phase 2+ | $1.5-2K/month |
 
 ### 2.3 Reference Hardware Instances
 
@@ -62,7 +61,7 @@ Provision these three instances for consistent benchmarking (see [Technical Spec
 ### 2.4 Repository Structure (Recommended: Monorepo)
 
 ```
-s2o/
+cpu-inference/
 ├── engine/                    # C/C++ inference engine (forked llama.cpp + LUT kernels)
 │   ├── src/
 │   │   ├── llama/             # llama.cpp vendored source
@@ -80,7 +79,7 @@ s2o/
 │   ├── quant/                 # Auto-quantization pipeline
 │   ├── tests/
 │   └── pyproject.toml
-├── cli/                       # CLI tool (Python or Rust)
+├── cli/                       # CLI tool (Python)
 │   ├── src/
 │   └── pyproject.toml
 ├── ui/                        # Model management web dashboard (Phase 2+)
@@ -106,10 +105,9 @@ s2o/
 
 ### 2.5 Local Development Setup
 
-**Step 1: Clone and build the engine**
+**Step 1: Build the engine**
 ```bash
-git clone https://github.com/s2o-ai/s2o.git
-cd s2o/engine
+cd engine
 mkdir build && cd build
 cmake .. -DCMAKE_BUILD_TYPE=Release -DLLAMA_NATIVE=ON
 cmake --build . -j$(nproc)
@@ -117,27 +115,19 @@ cmake --build . -j$(nproc)
 
 **Step 2: Set up the Python environment**
 ```bash
-cd s2o/server
+cd server
 python -m venv .venv
 source .venv/bin/activate        # Linux/macOS
 pip install -e ".[dev]"          # Install with dev dependencies
 ```
 
-**Step 3: Download a test model**
-```bash
-s2o run llama-2-7b-chat --quantize q4_k_m
-```
-
-**Step 4: Run tests**
+**Step 3: Run tests**
 ```bash
 # Engine tests
 cd engine/build && ctest --output-on-failure
 
 # Server tests
 cd server && pytest tests/ -v
-
-# Integration test
-cd benchmarks && python scripts/quick_check.py
 ```
 
 ---
@@ -184,7 +174,7 @@ cd benchmarks && python scripts/quick_check.py
 **Verification:**
 ```bash
 # 1. Start server
-s2o serve llama-2-7b-chat-q4_k_m --port 8080
+python -m server.main --model llama-2-7b-chat-q4_k_m --port 8080
 
 # 2. Test chat completions
 curl http://localhost:8080/v1/chat/completions \
@@ -287,12 +277,12 @@ python tests/test_openai_compat.py
 **Verification:**
 ```bash
 # Run detection on each reference hardware
-ssh intel-ref "s2o info --json" | jq .recommended_backend  # expect: "openvino"
-ssh amd-ref "s2o info --json" | jq .recommended_backend    # expect: "llama_cpp_lut"
-ssh arm-ref "s2o info --json" | jq .recommended_backend    # expect: "lut_neon"
+ssh intel-ref "cli info --json" | jq .recommended_backend  # expect: "openvino"
+ssh amd-ref "cli info --json" | jq .recommended_backend    # expect: "llama_cpp_lut"
+ssh arm-ref "cli info --json" | jq .recommended_backend    # expect: "lut_neon"
 
 # Verify feature detection accuracy
-s2o info --verbose  # Cross-reference with lscpu output
+cli info --verbose  # Cross-reference with lscpu output
 ```
 
 **Definition of Done:**
@@ -352,7 +342,7 @@ python engine/src/backends/openvino_convert.py \
   --output models/llama-2-7b-openvino/
 
 # 2. Run inference with OpenVINO backend
-s2o serve llama-2-7b-chat --backend openvino --port 8080
+cli serve llama-2-7b-chat --backend openvino --port 8080
 
 # 3. Benchmark against llama.cpp
 python benchmarks/scripts/compare_backends.py \
@@ -428,17 +418,17 @@ python benchmarks/scripts/compare_backends.py \
 **Verification:**
 ```bash
 # End-to-end test with Llama 2 7B
-s2o quantize meta-llama/Llama-2-7b-chat-hf --output models/llama2-7b/ --levels q4_k_m,q8_0
+cli quantize meta-llama/Llama-2-7b-chat-hf --output models/llama2-7b/ --levels q4_k_m,q8_0
 
 # Verify output files exist and are valid
 ls -la models/llama2-7b/
-s2o validate models/llama2-7b/q4_k_m.gguf
+cli validate models/llama2-7b/q4_k_m.gguf
 
 # Check quality report
 cat models/llama2-7b/quality_report.json | jq '.perplexity, .mmlu_average'
 
 # Test with Mistral 7B (second model)
-s2o quantize mistralai/Mistral-7B-Instruct-v0.2 --output models/mistral-7b/
+cli quantize mistralai/Mistral-7B-Instruct-v0.2 --output models/mistral-7b/
 ```
 
 **Definition of Done:**
@@ -539,30 +529,23 @@ python benchmarks/scripts/check_reproducibility.py --run1 reports/run1.json --ru
 
 **What:** Build a user-friendly command-line tool that provides the "15 minutes to first inference" experience.
 
-**Why:** The CLI is the top of the open-source adoption funnel. Developer experience here directly drives enterprise pipeline. If `s2o run` is faster and easier than Ollama, developers blog about it.
+**Why:** The CLI is the top of the open-source adoption funnel. Developer experience here directly drives enterprise pipeline. If our CLI is faster and easier than Ollama, developers blog about it.
 
 **How:**
-1. Build CLI with Python (Click or Typer) or Rust (Clap):
+1. Build CLI with Python (Click or Typer):
 
 | Command | Purpose | Example |
 |---------|---------|---------|
-| `s2o run <model>` | Download, quantize, and start interactive chat | `s2o run llama-2-7b-chat` |
-| `s2o serve <model>` | Start API server | `s2o serve mistral-7b --port 8080` |
-| `s2o bench <model>` | Run benchmarks | `s2o bench llama-2-7b-chat --output report.md` |
-| `s2o info` | Show CPU features and recommended config | `s2o info --json` |
-| `s2o models` | List available / downloaded models | `s2o models` |
-| `s2o quantize <model>` | Quantize a model | `s2o quantize meta-llama/Llama-2-7b-chat-hf` |
+| `cli run <model>` | Download, quantize, and start interactive chat | `cli run llama-2-7b-chat` |
+| `cli serve <model>` | Start API server | `cli serve mistral-7b --port 8080` |
+| `cli bench <model>` | Run benchmarks | `cli bench llama-2-7b-chat --output report.md` |
+| `cli info` | Show CPU features and recommended config | `cli info --json` |
+| `cli models` | List available / downloaded models | `cli models` |
+| `cli quantize <model>` | Quantize a model | `cli quantize meta-llama/Llama-2-7b-chat-hf` |
 
-2. One-command install:
-   ```bash
-   pip install s2o-inference
-   # OR
-   curl -fsSL https://s2o.ai/install.sh | bash
+2. First-run experience:
    ```
-
-3. First-run experience:
-   ```
-   $ s2o run llama-2-7b-chat
+   $ cli run llama-2-7b-chat
    [1/4] Detecting CPU... Intel Xeon 8480+ (AVX-512, AMX) ✓
    [2/4] Downloading llama-2-7b-chat (4.1 GB)... ████████ 100%
    [3/4] Optimizing for your hardware... Q4_K_M + OpenVINO ✓
@@ -572,42 +555,40 @@ python benchmarks/scripts/check_reproducibility.py --run1 reports/run1.json --ru
    Assistant: The capital of France is Paris...
    ```
 
-4. Progress indicators, color output, clear error messages
-5. Configuration file (`~/.s2o/config.yaml`) for defaults
+3. Progress indicators, color output, clear error messages
+4. Configuration file for defaults
 
 **Dependencies:** Task 1.1, Task 1.2, Task 1.4
 
 **Key files:**
 - `cli/src/main.py` — CLI entry point
-- `cli/src/commands/run.py` — `s2o run` command
-- `cli/src/commands/serve.py` — `s2o serve` command
-- `cli/src/commands/bench.py` — `s2o bench` command
-- `cli/src/commands/info.py` — `s2o info` command
+- `cli/src/commands/run.py` — `run` command
+- `cli/src/commands/serve.py` — `serve` command
+- `cli/src/commands/bench.py` — `bench` command
+- `cli/src/commands/info.py` — `info` command
 
 **Verification:**
 ```bash
 # Fresh install test (clean VM)
-pip install s2o-inference
-s2o info                    # Should detect CPU correctly
-s2o run phi-3-mini          # Should download, quantize, and start chat
-s2o serve phi-3-mini --port 8080  # Should start API server
+cli info                    # Should detect CPU correctly
+cli run phi-3-mini          # Should download, quantize, and start chat
+cli serve phi-3-mini --port 8080  # Should start API server
 curl http://localhost:8080/health  # Should return 200
 
 # Time the full flow
-time s2o run llama-2-7b-chat --first-token-only
+time cli run llama-2-7b-chat --first-token-only
 # Target: < 15 minutes from install to first response
 ```
 
 **Definition of Done:**
-- [ ] `pip install s2o-inference` works on Linux (x86, ARM) and macOS
-- [ ] `s2o run` goes from zero to interactive chat in < 15 minutes
-- [ ] `s2o info` correctly detects CPU and recommends backend
-- [ ] `s2o serve` starts OpenAI-compatible API server
+- [ ] CLI install works on Linux (x86, ARM) and macOS
+- [ ] `run` command goes from zero to interactive chat in < 15 minutes
+- [ ] `info` command correctly detects CPU and recommends backend
+- [ ] `serve` command starts OpenAI-compatible API server
 - [ ] Clear error messages for common failures (disk space, network, unsupported CPU)
 - [ ] `--help` documentation for all commands
 
 **Risks:**
-- Name collision on PyPI — check availability early, register name
 - Large download sizes may frustrate users — show progress, support resume
 
 **Estimated effort:** 1.5 weeks (1 engineer)
@@ -675,8 +656,7 @@ time s2o run llama-2-7b-chat --first-token-only
 
 # Tag a release
 git tag v0.1.0 && git push --tags
-# Verify PyPI package is published and installable
-pip install s2o-inference==0.1.0
+# Verify release artifacts are built correctly
 ```
 
 **Definition of Done:**
@@ -824,8 +804,8 @@ pip install s2o-inference==0.1.0
 cd engine/build && ctest -R lut_correctness --output-on-failure
 
 # Benchmark on Graviton4
-ssh arm-ref "s2o bench llama-2-7b-chat --backend lut_neon --output lut_results.json"
-ssh arm-ref "s2o bench llama-2-7b-chat --backend llama_cpp --output baseline.json"
+ssh arm-ref "cli bench llama-2-7b-chat --backend lut_neon --output lut_results.json"
+ssh arm-ref "cli bench llama-2-7b-chat --backend llama_cpp --output baseline.json"
 
 # Compare
 python benchmarks/scripts/compare_backends.py \
@@ -906,13 +886,13 @@ python benchmarks/scripts/compare_backends.py \
 cd engine/build && ctest -R lut_x86 --output-on-failure
 
 # AMD benchmark (clearest LUT advantage)
-ssh amd-ref "s2o bench llama-2-7b-chat --backend lut_avx512 --output lut_amd.json"
-ssh amd-ref "s2o bench llama-2-7b-chat --backend llama_cpp --output baseline_amd.json"
+ssh amd-ref "cli bench llama-2-7b-chat --backend lut_avx512 --output lut_amd.json"
+ssh amd-ref "cli bench llama-2-7b-chat --backend llama_cpp --output baseline_amd.json"
 
 # Intel benchmark (compare LUT vs AMX)
-ssh intel-ref "s2o bench llama-2-7b-chat --backend lut_avx512 --output lut_intel.json"
-ssh intel-ref "s2o bench llama-2-7b-chat --backend openvino --output ov_intel.json"
-ssh intel-ref "s2o bench llama-2-7b-chat --backend llama_cpp --output baseline_intel.json"
+ssh intel-ref "cli bench llama-2-7b-chat --backend lut_avx512 --output lut_intel.json"
+ssh intel-ref "cli bench llama-2-7b-chat --backend openvino --output ov_intel.json"
+ssh intel-ref "cli bench llama-2-7b-chat --backend llama_cpp --output baseline_intel.json"
 ```
 
 **Definition of Done:**
@@ -1063,9 +1043,9 @@ python benchmarks/scripts/analyze_load_test.py --input reports/load_*.json
 **Verification:**
 ```bash
 # Measure memory savings
-s2o serve llama-2-7b-chat --kv-cache-dtype fp16 --max-context 4096
+cli serve llama-2-7b-chat --kv-cache-dtype fp16 --max-context 4096
 # Record memory usage
-s2o serve llama-2-7b-chat --kv-cache-dtype int8 --max-context 4096
+cli serve llama-2-7b-chat --kv-cache-dtype int8 --max-context 4096
 # Expect: ~50% reduction in KV cache memory
 
 # Quality impact
@@ -1102,8 +1082,8 @@ python benchmarks/scripts/kv_cache_quality.py --model llama-2-7b-chat --baseline
 **Verification:**
 ```bash
 # Measure throughput gain
-s2o bench llama-2-7b-chat --speculative off --output no_spec.json
-s2o bench llama-2-7b-chat --speculative on --draft-model phi-2 --output with_spec.json
+cli bench llama-2-7b-chat --speculative off --output no_spec.json
+cli bench llama-2-7b-chat --speculative on --draft-model phi-2 --output with_spec.json
 
 # Compare
 python benchmarks/scripts/compare_backends.py --results no_spec.json,with_spec.json
@@ -1362,7 +1342,7 @@ python benchmarks/scripts/compare_backends.py --results no_spec.json,with_spec.j
 **How:**
 1. **Custom Resource Definitions (CRDs):**
    ```yaml
-   apiVersion: s2o.ai/v1
+   apiVersion: cpuinference.io/v1
    kind: InferenceModel
    metadata:
      name: llama-2-7b-clinical
@@ -1400,11 +1380,11 @@ kubectl apply -f deploy/operator.yaml
 kubectl apply -f examples/llama-2-7b.yaml
 
 # Verify pods are running
-kubectl get pods -l app=s2o-inference
+kubectl get pods -l app=cpu-inference
 
 # Test auto-scaling
-python benchmarks/scripts/load_test.py --url http://s2o-ingress/v1/chat/completions --concurrent 32
-kubectl get pods -l app=s2o-inference  # Should see more pods
+python benchmarks/scripts/load_test.py --url http://inference-ingress/v1/chat/completions --concurrent 32
+kubectl get pods -l app=cpu-inference  # Should see more pods
 
 # Test rolling update
 kubectl apply -f examples/llama-2-7b-v2.yaml  # New model version
@@ -1944,9 +1924,9 @@ SOC2 prep (month 3) → Auditor engagement (month 4) → Type 1 audit (month 5-7
 ### Phase 1 Smoke Tests
 ```bash
 # Full Phase 1 verification script
-s2o info                                          # CPU detection works
-s2o run phi-3-mini --first-token-only              # Download + inference works
-s2o serve llama-2-7b-chat --port 8080 &            # API server starts
+cli info                                          # CPU detection works
+cli run phi-3-mini --first-token-only              # Download + inference works
+cli serve llama-2-7b-chat --port 8080 &            # API server starts
 curl http://localhost:8080/health                   # Health check
 curl http://localhost:8080/v1/models                # Model listing
 curl -X POST http://localhost:8080/v1/chat/completions \
@@ -1964,7 +1944,7 @@ cd engine/build && ctest -R lut --output-on-failure
 python benchmarks/scripts/load_test.py --concurrent 16 --duration 30s
 
 # Speculative decoding
-s2o bench llama-2-7b-chat --speculative on --draft-model phi-2
+cli bench llama-2-7b-chat --speculative on --draft-model phi-2
 
 # Quality dashboard data
 python benchmarks/scripts/quality_eval.py --all-models --output quality_data.json
@@ -1976,7 +1956,7 @@ python benchmarks/scripts/quality_eval.py --all-models --output quality_data.jso
 python tests/test_airgap.py  # Runs in network-isolated container
 
 # K8s operator
-kubectl apply -f examples/llama-2-7b.yaml && kubectl wait --for=condition=ready pod -l app=s2o
+kubectl apply -f examples/llama-2-7b.yaml && kubectl wait --for=condition=ready pod -l app=cpu-inference
 
 # SSO flow
 python tests/test_sso.py --idp okta --config tests/okta_config.json
