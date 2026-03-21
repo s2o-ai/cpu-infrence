@@ -1,0 +1,3 @@
+[submodule "engine/src/llama"]
+	path = engine/src/llama
+	url = https://github.com/s2o-ai/llama.cpp.git

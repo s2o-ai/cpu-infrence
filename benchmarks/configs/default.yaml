@@ -1,0 +1,16 @@
+# S2O Default Benchmark Configuration
+
+models:
+  - path: models/qwen3.5-0.8b/Qwen3.5-0.8B-Q4_K_M.gguf
+    name: Qwen3.5-0.8B
+
+benchmark:
+  runs: 5
+  prompt_tokens: [128, 512]
+  gen_tokens: [32, 128]
+
+server:
+  concurrency: [1, 4]
+  requests_per_level: 10
+  max_tokens: 50
+  prompt: "Explain the concept of machine learning in simple terms."
