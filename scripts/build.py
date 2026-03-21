@@ -56,7 +56,7 @@ def get_nproc():
     return os.cpu_count() or 4
 
 
-def build(clean=False):
+def build(clean=False, lut=False):
     """Configure and build llama.cpp."""
     if not LLAMA_DIR.exists():
         print(f"ERROR: llama.cpp not found at {LLAMA_DIR}")
@@ -66,6 +66,11 @@ def build(clean=False):
     if clean and BUILD_DIR.exists():
         print("Cleaning build directory...")
         shutil.rmtree(BUILD_DIR)
+
+    # Ensure MSYS2 is on PATH for Windows builds
+    msys2_bin = Path("C:/msys64/mingw64/bin")
+    if msys2_bin.exists() and str(msys2_bin) not in os.environ.get("PATH", ""):
+        os.environ["PATH"] = str(msys2_bin) + os.pathsep + os.environ.get("PATH", "")
 
     cc, cxx = find_compiler()
     cmake = find_cmake()
@@ -93,6 +98,11 @@ def build(clean=False):
         "-DLLAMA_OPENSSL=OFF",
         "-DBUILD_SHARED_LIBS=OFF",
     ]
+
+    # S2O LUT kernels
+    if lut:
+        cmake_args.append("-DGGML_S2O_LUT=ON")
+        print("S2O LUT kernels: ENABLED")
 
     # Windows 10+ target for MinGW
     if platform.system() == "Windows":
@@ -122,4 +132,5 @@ def build(clean=False):
 
 if __name__ == "__main__":
     clean = "--clean" in sys.argv
-    build(clean=clean)
+    lut = "--lut" in sys.argv
+    build(clean=clean, lut=lut)

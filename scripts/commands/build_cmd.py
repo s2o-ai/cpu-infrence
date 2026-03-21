@@ -18,8 +18,11 @@ from build import build as do_build  # noqa: E402
 
 def build(
     clean: bool = typer.Option(False, "--clean", help="Clean build directory first"),
+    lut: bool = typer.Option(False, "--lut", help="Enable S2O LUT-based INT4 kernels"),
 ):
     """Build llama-server and related binaries."""
     console.print("[bold blue]Building inference engine...[/]")
-    do_build(clean=clean)
+    if lut:
+        console.print("[bold yellow]S2O LUT kernels enabled[/]")
+    do_build(clean=clean, lut=lut)
     console.print("[bold green]Build complete.[/]")
