@@ -118,6 +118,52 @@ class TestLutKernelSanity:
 
 
 # --------------------------------------------------------------------------
+# ARM NEON kernel tests
+# --------------------------------------------------------------------------
+
+class TestLutArmKernel:
+    """Verify ARM NEON LUT kernel files and integration."""
+
+    def test_arm_neon_kernel_exists(self):
+        assert (LUT_DIR / "lut-arm-neon.cpp").exists()
+
+    def test_arm_neon_kernel_has_dispatch_table(self):
+        content = (LUT_DIR / "lut-arm-neon.cpp").read_text()
+        assert "s2o_lut_kernels_neon" in content
+        assert "s2o_lut_kernels_neon_dotprod" in content
+
+    def test_arm_neon_kernel_has_gemv(self):
+        content = (LUT_DIR / "lut-arm-neon.cpp").read_text()
+        assert "s2o_lut_gemv_q4_0_neon" in content
+
+    def test_arm_neon_kernel_has_dotprod_variant(self):
+        content = (LUT_DIR / "lut-arm-neon.cpp").read_text()
+        assert "vdotq_s32" in content
+
+    def test_arm_neon_kernel_has_quantization(self):
+        content = (LUT_DIR / "lut-arm-neon.cpp").read_text()
+        assert "s2o_quantize_block_f32_to_i8_neon" in content
+
+    def test_cmake_guard_arm(self):
+        cmake_file = LLAMA_DIR / "ggml" / "src" / "ggml-cpu" / "CMakeLists.txt"
+        content = cmake_file.read_text()
+        assert 'GGML_S2O_LUT AND GGML_SYSTEM_ARCH STREQUAL "arm"' in content
+
+    def test_arm_externs_in_common_header(self):
+        content = (LUT_DIR / "lut-common.h").read_text()
+        assert "s2o_lut_kernels_neon" in content
+        assert "s2o_lut_kernels_neon_dotprod" in content
+
+    def test_arm_dispatch_in_selector(self):
+        content = (LUT_DIR / "lut-common.h").read_text()
+        assert "__ARM_NEON" in content
+
+    def test_integration_guard_includes_arm(self):
+        content = (LUT_DIR / "s2o-lut.cpp").read_text()
+        assert "__ARM_NEON" in content
+
+
+# --------------------------------------------------------------------------
 # Benchmark script tests
 # --------------------------------------------------------------------------
 

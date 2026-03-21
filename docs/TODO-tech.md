@@ -70,12 +70,21 @@
 
 ## Phase 2: Differentiation (Months 3-6)
 
-### Task 2.1: Custom LUT Kernels — ARM (NEON/SVE2)
-- [ ] LUT data structure (16x16 INT4 lookup table, L1-resident)
-- [ ] NEON kernel (VTBL/VTBX + SDOT)
-- [ ] SVE2 kernel (TBL with predication)
+### Task 2.1: Custom LUT Kernels — ARM (NEON/SVE2) — MOSTLY DONE
+- [x] NEON baseline kernel: `vmull_s8` + `vpaddlq_s16` integer dot product (`lut-arm-neon.cpp`)
+- [x] DOTPROD variant: `vdotq_s32` (~4x fewer instructions in inner loop)
+- [x] On-the-fly FP32→INT8 quantization: `vcvtnq_s32_f32` + `vqmovn` narrowing chain
+- [x] Q4_0 nibble unpacking: `vandq_u8`/`vshrq_n_u8` split + center at [-8,+7]
+- [x] Dual dispatch tables: `s2o_lut_kernels_neon` and `s2o_lut_kernels_neon_dotprod`
+- [x] CMake integration: ARM `elseif` block in `ggml-cpu/CMakeLists.txt`
+- [x] `lut-common.h` updated: ARM externs + compile-time selector
+- [x] `s2o-lut.cpp` guard widened: `#if defined(__AVX2__) || defined(__ARM_NEON)`
+- [x] `build.py --arch aarch64` cross-compile flag
+- [x] 9 Python integration tests pass (`tests/test_lut.py::TestLutArmKernel`)
+- [x] Benchmark config: `benchmarks/configs/graviton.yaml`
+- [ ] SVE2 kernel (TBL with predication) — **future optimization**
 - [ ] Weight re-packing for LUT-friendly layout
-- [ ] Correctness tests (bitwise match vs naive)
+- [ ] Correctness tests on actual ARM hardware — **BLOCKED: needs Graviton instance**
 - [ ] Target: 1.3-2x over llama.cpp on Graviton4
 
 ### Task 2.2: Custom LUT Kernels — x86 (AVX2/AVX-512) — IN PROGRESS
@@ -101,11 +110,15 @@
 
 - [x] Iteration-level scheduling — already in llama-server (`--parallel N`)
 - [x] KV cache memory pool — already managed per-slot in llama-server
-- [ ] Wire `--parallel` into `s2o serve --max-concurrent N`
-- [ ] Priority queue proxy (`engine/serving/proxy.py` — header-based priority)
-- [ ] Graceful degradation (503 + Retry-After at capacity)
-- [ ] `/metrics` monitoring endpoint
-- [ ] Target: 16+ concurrent users with P99 < 2x P50
+- [x] Wire `--parallel` into `s2o serve --max-concurrent N`
+- [x] Priority queue proxy (`engine/serving/proxy.py` — header-based priority, `X-Priority` header)
+- [x] Graceful degradation (503 + Retry-After at capacity, semaphore-based admission control)
+- [x] `/metrics` monitoring endpoint (Prometheus-compatible: `s2o_active_requests`, `s2o_requests_total`, `s2o_503_total`)
+- [x] `/v1/status` endpoint (active, max, pct_used, total_requests, rejected_503)
+- [x] Streaming support via `httpx.AsyncClient.stream()` for SSE responses
+- [x] `s2o serve --proxy --max-concurrent N` to enable proxy
+- [x] 13 tests pass (`tests/test_serving.py`)
+- [ ] Target: 16+ concurrent users with P99 < 2x P50 — **BLOCKED: needs load testing**
 
 ### Task 2.4: Model Management UI — MOVED TO [TODO-uiux.md](TODO-uiux.md)
 
@@ -114,8 +127,10 @@
 
 - [x] KV cache quantization — already in llama.cpp (`--cache-type-k Q8_0 --cache-type-v Q8_0`)
 - [x] Per-slot prefix caching — already in llama.cpp (`--cache-reuse N`, uses `llama_kv_cache_seq_rm/shift`)
-- [ ] Wire `--cache-type-k/v` into `s2o serve --kv-quant` flag
-- [ ] Benchmark perplexity impact + memory savings (`benchmarks/bench_kv.py`)
+- [x] Wire `--cache-type-k/v` into `s2o serve --kv-quant` flag
+- [x] Auto-recommendation: `engine/detect/_recommend.py` adds `kv_quant` for low-RAM scenarios
+- [x] Benchmark script: `benchmarks/bench_kv.py` (f16 vs q8_0 vs q4_0 comparison)
+- [ ] Run benchmarks on reference hardware — **BLOCKED: needs AWS instances**
 - [ ] Global cross-slot prefix cache (shared KV pools for common system prompts) — **NOT in llama.cpp, must build**
 - [ ] PagedAttention (vLLM-style block table / physical-virtual page mapping) — **NOT in llama.cpp, must build**
 - [ ] Target: 40-50% KV cache memory reduction, < 0.5% perplexity degradation
@@ -127,10 +142,12 @@
 - [x] Draft model support — already in llama.cpp (`--model-draft`)
 - [x] Multiple strategies (draft, ngram, EAGLE3) — already in llama.cpp
 - [x] Acceptance rate tracking — already in llama.cpp (`n_draft_total`/`n_draft_accepted`)
-- [ ] Wire `--speculative` + `--model-draft` into `s2o serve --speculative --draft-model`
-- [ ] Draft model auto-selection (match family: 7B→0.5-1B, 13B→1-3B)
+- [x] Wire `--speculative` + `--model-draft` into `s2o serve --speculative --draft-model`
+- [x] Draft model auto-selection (`engine/serving/speculative.py` — family+size matching from `models/`)
+- [x] Benchmark script: `benchmarks/bench_speculative.py` (baseline vs draft A/B comparison)
+- [x] 18 tests pass (`tests/test_speculative.py`)
 - [ ] Auto-tune K based on acceptance rate
-- [ ] Benchmark: throughput with/without speculation (`benchmarks/bench_speculative.py`)
+- [ ] Run benchmarks on reference hardware — **BLOCKED: needs matching model pairs**
 - [ ] Target: 1.3-2x throughput improvement
 
 ### Task 2.8: Quality Dashboard — MOVED TO [TODO-uiux.md](TODO-uiux.md)
@@ -193,9 +210,11 @@
 | `tests/test_bench.py` | 11 | All pass |
 | `tests/test_cli.py` | 5 | All pass |
 | `tests/test_quantize.py` | 18 | All pass |
-| `tests/test_lut.py` | 18 | All pass |
+| `tests/test_lut.py` | 27 | All pass (18 x86 + 9 ARM) |
+| `tests/test_serving.py` | 13 | All pass |
+| `tests/test_speculative.py` | 18 | All pass |
 | `s2o-lut/test_lut.cpp` (C++) | 10 | All pass (AVX2 GEMV×7 + GEMM×3) |
-| **Total** | **82** | **All pass** |
+| **Total** | **122** | **All pass** |
 
 ---
 

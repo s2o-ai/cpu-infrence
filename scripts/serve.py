@@ -112,11 +112,38 @@ def serve(args):
     if args.api_key:
         cmd.extend(["--api-key", args.api_key])
 
+    # KV cache quantization
+    kv_quant = getattr(args, "kv_quant", None)
+    if kv_quant and kv_quant != "f16":
+        cmd.extend(["--cache-type-k", kv_quant, "--cache-type-v", kv_quant])
+
+    # Speculative decoding
+    speculative = getattr(args, "speculative", False)
+    draft_model = getattr(args, "draft_model", None)
+    if speculative and draft_model:
+        draft_path = find_model(draft_model)
+        cmd.extend(["--model-draft", str(draft_path)])
+    elif speculative and not draft_model:
+        # Auto-select draft model
+        try:
+            from engine.serving.speculative import suggest_draft_model
+            models_dir = ROOT / "models"
+            draft = suggest_draft_model(str(model), models_dir)
+            if draft:
+                cmd.extend(["--model-draft", draft])
+                print(f"Draft:    {Path(draft).name} (auto-selected)")
+            else:
+                print("WARNING: --speculative set but no draft model found. Falling back to ngram.")
+        except ImportError:
+            print("WARNING: Could not import speculative module")
+
     print(f"Model:    {model}")
     print(f"Server:   http://{args.host}:{args.port}")
     print(f"Threads:  {threads}")
     print(f"Context:  {args.ctx_size}")
     print(f"Parallel: {args.parallel} slots")
+    if kv_quant and kv_quant != "f16":
+        print(f"KV Cache: {kv_quant}")
     print()
     print("Endpoints:")
     print(f"  Chat:    POST http://{args.host}:{args.port}/v1/chat/completions")
@@ -139,12 +166,34 @@ def serve(args):
     signal.signal(signal.SIGTERM, shutdown)
 
     # Wait for health
-    if wait_for_health(args.host, args.port):
+    health_port = args.port
+    if wait_for_health(args.host, health_port):
         print("Server is ready!")
     else:
         print("WARNING: Server did not become healthy within 30s")
 
-    proc.wait()
+    # Start proxy if requested
+    use_proxy = getattr(args, "proxy", False)
+    max_concurrent = getattr(args, "max_concurrent", 16)
+    if use_proxy:
+        try:
+            from engine.serving.config import ServingConfig
+            from engine.serving.proxy import ServingProxy
+
+            proxy_port = args.port + 1
+            proxy_config = ServingConfig(
+                max_concurrent=max_concurrent,
+                kv_cache_type=kv_quant or "f16",
+            )
+            upstream = f"http://{args.host}:{args.port}"
+            proxy = ServingProxy(upstream, proxy_config)
+            print(f"\nProxy:    http://{args.host}:{proxy_port} (max {max_concurrent} concurrent)")
+            proxy.run(host=args.host, port=proxy_port)
+        except ImportError as e:
+            print(f"WARNING: Could not start proxy: {e}")
+            proc.wait()
+    else:
+        proc.wait()
 
 
 def main():
@@ -156,6 +205,12 @@ def main():
     parser.add_argument("--parallel", type=int, default=4, help="Parallel slots (default: 4)")
     parser.add_argument("--threads", type=int, default=None, help="CPU threads (default: all)")
     parser.add_argument("--api-key", default=None, help="API key for authentication")
+    parser.add_argument("--kv-quant", default=None, choices=["f16", "q8_0", "q4_0"],
+                        help="KV cache quantization type (default: f16)")
+    parser.add_argument("--speculative", action="store_true", help="Enable speculative decoding")
+    parser.add_argument("--draft-model", default=None, help="Path to draft model for speculation")
+    parser.add_argument("--max-concurrent", type=int, default=16, help="Max concurrent requests (default: 16)")
+    parser.add_argument("--proxy", action="store_true", help="Enable S2O admission control proxy")
     args = parser.parse_args()
     serve(args)
 

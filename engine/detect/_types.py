@@ -79,6 +79,7 @@ class Recommendation:
     threads: int = 0
     max_model_b: float = 0.0  # max model size in billions of params
     numa_strategy: str = ""  # "" or "distribute"
+    kv_quant: str = "f16"  # KV cache quantization: f16, q8_0, q4_0
 
 
 @dataclass

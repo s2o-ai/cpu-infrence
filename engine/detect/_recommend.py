@@ -124,11 +124,14 @@ def _adjust_for_memory(memory: MemoryInfo, rec: Recommendation) -> Recommendatio
         rec.max_model_b = 7.0
         if rec.quantization == "Q4_K_M":
             rec.quantization = "Q4_K_S"
+        rec.kv_quant = "q8_0"
     elif total >= 8:
         rec.max_model_b = 3.0
         rec.quantization = "Q4_0"
+        rec.kv_quant = "q8_0"
     else:
         rec.max_model_b = 1.0
         rec.quantization = "Q4_0"
+        rec.kv_quant = "q4_0"
 
     return rec

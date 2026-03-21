@@ -56,7 +56,7 @@ def get_nproc():
     return os.cpu_count() or 4
 
 
-def build(clean=False, lut=False):
+def build(clean=False, lut=False, arch=None):
     """Configure and build llama.cpp."""
     if not LLAMA_DIR.exists():
         print(f"ERROR: llama.cpp not found at {LLAMA_DIR}")
@@ -104,6 +104,21 @@ def build(clean=False, lut=False):
         cmake_args.append("-DGGML_S2O_LUT=ON")
         print("S2O LUT kernels: ENABLED")
 
+    # Cross-compile for aarch64
+    if arch == "aarch64":
+        cmake_args.append("-DCMAKE_SYSTEM_PROCESSOR=aarch64")
+        aarch64_gcc = shutil.which("aarch64-linux-gnu-gcc")
+        aarch64_gxx = shutil.which("aarch64-linux-gnu-g++")
+        if aarch64_gcc and aarch64_gxx:
+            cmake_args.extend([
+                f"-DCMAKE_C_COMPILER={aarch64_gcc}",
+                f"-DCMAKE_CXX_COMPILER={aarch64_gxx}",
+                "-DCMAKE_SYSTEM_NAME=Linux",
+            ])
+            print(f"Cross-compile: aarch64 ({aarch64_gcc})")
+        else:
+            print("WARNING: aarch64 cross-compiler not found. Build may use host compiler.")
+
     # Windows 10+ target for MinGW
     if platform.system() == "Windows":
         cmake_args.extend([
@@ -133,4 +148,8 @@ def build(clean=False, lut=False):
 if __name__ == "__main__":
     clean = "--clean" in sys.argv
     lut = "--lut" in sys.argv
-    build(clean=clean, lut=lut)
+    arch = None
+    for i, arg in enumerate(sys.argv):
+        if arg == "--arch" and i + 1 < len(sys.argv):
+            arch = sys.argv[i + 1]
+    build(clean=clean, lut=lut, arch=arch)

@@ -1,0 +1,18 @@
+# Benchmark config for AWS Graviton (ARM) instances
+# Usage: python benchmarks/bench_lut.py --config benchmarks/configs/graviton.yaml
+
+instance: c7g.4xlarge
+arch: aarch64
+model: Qwen2.5-7B-Instruct-Q4_K_M.gguf
+threads: 16
+variants:
+  - stock
+  - lut_neon
+  - lut_neon_dotprod
+targets:
+  prompt_tok_s: 150
+  gen_tok_s: 10
+notes: |
+  AWS c7g.4xlarge: 16 vCPUs (Graviton3), 32 GB RAM
+  Graviton3: ARMv8.4-A, NEON, DOTPROD, SVE (256-bit)
+  Graviton4 (c8g): ARMv9-A, SVE2, expected 1.3x over Graviton3
