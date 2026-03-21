@@ -47,6 +47,20 @@ class TestInfoCommand:
         assert "recommendation" in data
 
 
+class TestBuildCommand:
+    def test_build_openvino_flag_exists(self):
+        build_cmd = ROOT / "scripts" / "commands" / "build_cmd.py"
+        content = build_cmd.read_text()
+        assert "--openvino" in content
+        assert "OpenVINO" in content
+
+    def test_build_py_has_openvino_param(self):
+        build_py = ROOT / "scripts" / "build.py"
+        content = build_py.read_text()
+        assert "openvino" in content
+        assert "GGML_OPENVINO" in content
+
+
 class TestModelsCommand:
     def test_models(self):
         r = run_cli("models")

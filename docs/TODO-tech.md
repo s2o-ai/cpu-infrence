@@ -31,7 +31,7 @@
 
 - [x] OpenVINO backend fully implemented upstream (iGPU, Arc, NPU via Level Zero)
 - [x] Full op coverage + graph-level optimization passes
-- [ ] Wire `-DGGML_OPENVINO=ON` into `s2o build --openvino` flag
+- [x] Wire `-DGGML_OPENVINO=ON` into `s2o build --openvino` flag
 - [ ] Benchmark: llama.cpp CPU vs OpenVINO on Intel Xeon
 - [ ] Fallback to llama.cpp CPU if OpenVINO unavailable
 - **Blocker:** Needs Intel Xeon with AMX (AWS c7i.metal-48xl, ~$8.57/hr)
@@ -87,23 +87,25 @@
 - [ ] Correctness tests on actual ARM hardware — **BLOCKED: needs Graviton instance**
 - [ ] Target: 1.3-2x over llama.cpp on Graviton4
 
-### Task 2.2: Custom LUT Kernels — x86 (AVX2/AVX-512) — IN PROGRESS
+### Task 2.2: Custom LUT Kernels — x86 (AVX2/AVX-512) — MOSTLY DONE
 > **Note:** llama.cpp already has full AVX-512 SIMD kernels for all quant types (`ggml-cpu/arch/x86/quants.c` — VPSHUFB, VPDPBUSD, VPMADDUBSW). Also has AMX INT8 backend (`ggml-cpu/amx/`). Our LUT kernels must beat these existing paths to justify the fork overhead.
 
 - [x] Backend infrastructure: `extra_buffer_type` + `tensor_traits` (pattern from AMX/KleidiAI)
 - [x] Public header: `ggml_backend_cpu_s2o_lut_buffer_type()` in `s2o-lut/s2o-lut.h`
 - [x] Integration: `s2o-lut/s2o-lut.cpp` — supports_op, compute_forward, thread partitioning
 - [x] Kernel dispatch table + runtime selector in `s2o-lut/lut-common.h`
-- [x] AVX2 kernel: on-the-fly FP32→INT8 quantization + VPMADDUBSW integer dot product
-- [x] AVX-512 kernel: dual-column processing (2 output cols per 512-bit register), AVX512F+BW only
+- [x] AVX2 kernel: 4-wide GEMV + VPSHUFB dequant + L2 tiled GEMM + software prefetch
+- [x] AVX-512 kernel: 4-wide (2×dual-column 512-bit) + VPSHUFB dequant + L2 tiling + prefetch
 - [x] CMake integration: `GGML_S2O_LUT` option, `s2o build --lut`
-- [x] C++ correctness tests pass (10/10 — GEMV + GEMM, K=32..4096)
-- [x] Python integration tests pass (18/18)
-- [ ] VPSHUFB LUT path (true lookup table, not just integer dot product)
-- [ ] Cache-aware tiling (L2-sized tiles, software prefetch with `_mm_prefetch`)
-- [ ] Weight repacking in `set_tensor` (currently passthrough)
-- [ ] Auto-benchmark S2O LUT vs stock llama.cpp at model load
-- [ ] Target: 1.3-2x over stock llama.cpp on AMD EPYC / Intel Xeon
+- [x] C++ correctness tests pass (17/17 — GEMV×7 + GEMM×3 + repack roundtrip×2 + packed GEMV×4 + summary)
+- [x] Python integration tests pass (42/42)
+- [x] VPSHUFB LUT path: 16-entry constant table `[-8..+7]`, replaces arithmetic nibble-unpack
+- [x] Cache-aware tiling: L2-sized tiles (256KB default), `_mm_prefetch` with PREFETCH_DIST=4
+- [x] Auto-benchmark at kernel init: synthetic GEMV reports GOPS to stderr
+- [x] Weight repacking in `set_tensor`: column-interleaved 4-wide layout (`s2o_repack_q4_0`)
+- [x] Packed GEMV/GEMM kernels (AVX2 + AVX-512) using contiguous 4-block access
+- [x] Dual `tensor_traits` pattern: standard vs packed layout selected via `tensor->extra`
+- [ ] Target: 1.3-2x over stock llama.cpp on AMD EPYC / Intel Xeon — **needs hardware benchmarking**
 
 ### Task 2.3: Continuous Batching — MOSTLY IN LLAMA.CPP
 > **Audit finding:** Iteration-level continuous batching is fully implemented in `tools/server/server-context.cpp` (slot-based scheduling). Use `--parallel N` flag. No backpressure (503 + Retry-After) yet — that's our value-add.
@@ -146,7 +148,7 @@
 - [x] Draft model auto-selection (`engine/serving/speculative.py` — family+size matching from `models/`)
 - [x] Benchmark script: `benchmarks/bench_speculative.py` (baseline vs draft A/B comparison)
 - [x] 18 tests pass (`tests/test_speculative.py`)
-- [ ] Auto-tune K based on acceptance rate
+- [x] Auto-tune K based on acceptance rate (`KAutoTuner` class + `--draft-k` CLI flag)
 - [ ] Run benchmarks on reference hardware — **BLOCKED: needs matching model pairs**
 - [ ] Target: 1.3-2x throughput improvement
 
@@ -177,9 +179,9 @@
 ### Task 3.6: A/B Testing & Multi-Model Serving
 > UI components moved to [TODO-uiux.md](TODO-uiux.md). Backend routing stays here.
 
-- [ ] Multi-model routing (single endpoint, model via request param)
-- [ ] Traffic splitting (percentage-based or user-based)
-- [ ] Routing proxy (`engine/serving/router.py`)
+- [x] Multi-model routing (single endpoint, model via request param) — `engine/serving/router.py`
+- [x] Traffic splitting (weighted-random A/B) — `ModelRouter._select_route()`
+- [x] Routing proxy (`engine/serving/router.py`) — 14 tests pass (`tests/test_router.py`)
 
 ---
 
@@ -208,13 +210,14 @@
 |------|-------|--------|
 | `tests/test_detect.py` | 20 | All pass |
 | `tests/test_bench.py` | 11 | All pass |
-| `tests/test_cli.py` | 5 | All pass |
+| `tests/test_cli.py` | 7 | All pass |
 | `tests/test_quantize.py` | 18 | All pass |
-| `tests/test_lut.py` | 27 | All pass (18 x86 + 9 ARM) |
+| `tests/test_lut.py` | 42 | All pass (19 x86 + 9 ARM + 4 kernel opt + 2 bench + 8 repacking) |
 | `tests/test_serving.py` | 13 | All pass |
-| `tests/test_speculative.py` | 18 | All pass |
-| `s2o-lut/test_lut.cpp` (C++) | 10 | All pass (AVX2 GEMV×7 + GEMM×3) |
-| **Total** | **122** | **All pass** |
+| `tests/test_speculative.py` | 26 | All pass |
+| `tests/test_router.py` | 14 | All pass |
+| `s2o-lut/test_lut.cpp` (C++) | 17 | All pass (AVX2 GEMV×7 + GEMM×3 + repack×2 + packed GEMV×4 + summary) |
+| **Total** | **168** | **All pass** |
 
 ---
 

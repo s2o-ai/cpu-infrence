@@ -116,6 +116,44 @@ class TestLutKernelSanity:
         content = (LUT_DIR / "s2o-lut.h").read_text()
         assert "ggml_backend_cpu_s2o_lut_buffer_type" in content
 
+    def test_avx2_uses_vpshufb(self):
+        content = (LUT_DIR / "lut-x86-avx2.cpp").read_text()
+        assert "s2o_vpshufb_dequant_q4_0" in content
+        assert "_mm_shuffle_epi8" in content
+
+    def test_avx2_4wide_processing(self):
+        content = (LUT_DIR / "lut-x86-avx2.cpp").read_text()
+        assert "4-wide" in content
+        assert "acc0" in content and "acc3" in content
+
+    def test_avx512_4wide_processing(self):
+        content = (LUT_DIR / "lut-x86-avx512.cpp").read_text()
+        assert "4-wide" in content
+        assert "acc0" in content and "acc3" in content
+
+    def test_prefetch_in_kernels(self):
+        avx2 = (LUT_DIR / "lut-x86-avx2.cpp").read_text()
+        avx512 = (LUT_DIR / "lut-x86-avx512.cpp").read_text()
+        assert "_mm_prefetch" in avx2
+        assert "_mm_prefetch" in avx512
+        assert "S2O_LUT_PREFETCH_DIST" in avx2
+
+    def test_l2_tiling_in_gemm(self):
+        avx2 = (LUT_DIR / "lut-x86-avx2.cpp").read_text()
+        assert "S2O_LUT_DEFAULT_L2_TILE_BYTES" in avx2
+        assert "tile_n" in avx2
+
+    def test_dequant_table_in_common_header(self):
+        content = (LUT_DIR / "lut-common.h").read_text()
+        assert "s2o_q4_dequant_table" in content
+        assert "S2O_LUT_PREFETCH_DIST" in content
+        assert "S2O_LUT_COLS_PER_ITER" in content
+
+    def test_auto_benchmark_in_init(self):
+        content = (LUT_DIR / "s2o-lut.cpp").read_text()
+        assert "s2o_lut_auto_benchmark" in content
+        assert "GOPS" in content
+
 
 # --------------------------------------------------------------------------
 # ARM NEON kernel tests
@@ -178,3 +216,52 @@ class TestLutBenchmark:
         import benchmarks.bench_lut as bl
         assert hasattr(bl, "BenchResult")
         assert hasattr(bl, "print_comparison")
+
+
+# --------------------------------------------------------------------------
+# Weight repacking tests
+# --------------------------------------------------------------------------
+
+class TestLutRepacking:
+    """Verify column-interleaved weight repacking infrastructure."""
+
+    def test_packed_magic_constant(self):
+        content = (LUT_DIR / "lut-common.h").read_text()
+        assert "S2O_LUT_PACKED_MAGIC" in content
+        assert "0x53325130" in content  # 'S2Q0'
+
+    def test_repack_function_exists(self):
+        content = (LUT_DIR / "lut-common.h").read_text()
+        assert "s2o_repack_q4_0" in content
+        assert "s2o_unpack_q4_0" in content
+
+    def test_block_size_constant(self):
+        content = (LUT_DIR / "lut-common.h").read_text()
+        assert "S2O_Q4_0_BLOCK_SIZE" in content
+        # Should be 2 + QK4_0/2 = 2 + 16 = 18
+        assert "2 + QK4_0 / 2" in content
+
+    def test_packed_kernel_slots_in_dispatch_table(self):
+        content = (LUT_DIR / "lut-common.h").read_text()
+        assert "gemv_q4_0_packed" in content
+        assert "gemm_q4_0_packed" in content
+
+    def test_avx2_packed_kernel_exists(self):
+        content = (LUT_DIR / "lut-x86-avx2.cpp").read_text()
+        assert "s2o_lut_gemv_q4_0_packed_avx2" in content
+        assert "s2o_lut_gemm_q4_0_packed_avx2" in content
+
+    def test_avx512_packed_kernel_exists(self):
+        content = (LUT_DIR / "lut-x86-avx512.cpp").read_text()
+        assert "s2o_lut_gemv_q4_0_packed_avx512" in content
+        assert "s2o_lut_gemm_q4_0_packed_avx512" in content
+
+    def test_set_tensor_repack_logic(self):
+        content = (LUT_DIR / "s2o-lut.cpp").read_text()
+        assert "s2o_repack_q4_0" in content
+        assert "packed_tensor_traits" in content
+
+    def test_arm_packed_slots_nullptr(self):
+        content = (LUT_DIR / "lut-arm-neon.cpp").read_text()
+        assert "gemv_q4_0_packed" in content
+        assert "gemm_q4_0_packed" in content

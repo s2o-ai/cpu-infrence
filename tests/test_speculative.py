@@ -16,6 +16,7 @@ from engine.serving.speculative import (
     _parse_size,
     _parse_family,
     DRAFT_SIZE_MAP,
+    KAutoTuner,
 )
 
 
@@ -122,3 +123,67 @@ class TestDraftSizeMap:
 
     def test_smallest_has_no_drafts(self):
         assert DRAFT_SIZE_MAP["0.5b"] == []
+
+
+# --------------------------------------------------------------------------
+# KAutoTuner
+# --------------------------------------------------------------------------
+
+class TestKAutoTuner:
+
+    def test_initial_k(self):
+        tuner = KAutoTuner()
+        assert tuner.k == 4
+
+    def test_increment_when_high_acceptance(self):
+        tuner = KAutoTuner(target_accept=0.7)
+        # Record very high acceptance rate (90%)
+        for _ in range(10):
+            tuner.record(100, 90)
+        new_k = tuner.suggest_k()
+        assert new_k == 5  # incremented from 4
+
+    def test_decrement_when_low_acceptance(self):
+        tuner = KAutoTuner(target_accept=0.7)
+        # Record very low acceptance rate (40%)
+        for _ in range(10):
+            tuner.record(100, 40)
+        new_k = tuner.suggest_k()
+        assert new_k == 3  # decremented from 4
+
+    def test_stable_near_target(self):
+        tuner = KAutoTuner(target_accept=0.7)
+        # Record acceptance rate near target (70%)
+        for _ in range(10):
+            tuner.record(100, 70)
+        new_k = tuner.suggest_k()
+        assert new_k == 4  # unchanged
+
+    def test_clamp_at_k_max(self):
+        tuner = KAutoTuner(k_max=6, target_accept=0.7)
+        tuner.k = 6
+        # Very high acceptance — should not exceed k_max
+        for _ in range(10):
+            tuner.record(100, 95)
+        new_k = tuner.suggest_k()
+        assert new_k == 6
+
+    def test_clamp_at_k_min(self):
+        tuner = KAutoTuner(k_min=2, target_accept=0.7)
+        tuner.k = 2
+        # Very low acceptance — should not go below k_min
+        for _ in range(10):
+            tuner.record(100, 10)
+        new_k = tuner.suggest_k()
+        assert new_k == 2
+
+    def test_empty_history_returns_current(self):
+        tuner = KAutoTuner()
+        assert tuner.suggest_k() == 4
+
+    def test_window_limits_history(self):
+        tuner = KAutoTuner(window=5)
+        # Fill with more than window size
+        for _ in range(20):
+            tuner.record(10, 8)
+        assert len(tuner._history) == 5

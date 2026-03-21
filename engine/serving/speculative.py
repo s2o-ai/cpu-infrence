@@ -89,3 +89,60 @@ def suggest_draft_model(main_model_path: str, models_dir: Path) -> str | None:
 def acceptance_rate(n_draft_total: int, n_draft_accepted: int) -> float:
     """Calculate speculative decoding acceptance rate."""
     return n_draft_accepted / max(n_draft_total, 1)
+
+
+class KAutoTuner:
+    """Adaptive draft-K controller for speculative decoding.
+
+    Tracks acceptance rate over a sliding window and adjusts the number
+    of draft tokens (K) up or down to stay near the target acceptance rate.
+    """
+
+    def __init__(
+        self,
+        k_min: int = 1,
+        k_max: int = 8,
+        target_accept: float = 0.7,
+        window: int = 50,
+    ) -> None:
+        self.k: int = 4  # starting draft tokens
+        self.k_min = k_min
+        self.k_max = k_max
+        self.target_accept = target_accept
+        self._window = window
+        self._history: list[tuple[int, int]] = []  # (draft_total_delta, draft_accepted_delta)
+
+    def record(self, n_draft_total_delta: int, n_draft_accepted_delta: int) -> None:
+        """Record a batch of draft token statistics."""
+        if n_draft_total_delta <= 0:
+            return
+        self._history.append((n_draft_total_delta, n_draft_accepted_delta))
+        if len(self._history) > self._window:
+            self._history = self._history[-self._window:]
+
+    @property
+    def current_rate(self) -> float:
+        """Acceptance rate over the sliding window."""
+        total = sum(d for d, _ in self._history)
+        accepted = sum(a for _, a in self._history)
+        return acceptance_rate(total, accepted)
+
+    def suggest_k(self) -> int:
+        """Suggest a new K value based on recent acceptance rate.
+
+        If rate > target + 0.1 → increment K (more drafts, more speedup).
+        If rate < target - 0.1 → decrement K (fewer wasted drafts).
+        Otherwise keep current K.
+        """
+        if not self._history:
+            return self.k
+
+        rate = self.current_rate
+        margin = 0.1
+
+        if rate > self.target_accept + margin:
+            self.k = min(self.k + 1, self.k_max)
+        elif rate < self.target_accept - margin:
+            self.k = max(self.k - 1, self.k_min)
+
+        return self.k

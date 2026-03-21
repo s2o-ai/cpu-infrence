@@ -22,6 +22,8 @@ class ServingConfig:
     def effective_kv_type_v(self) -> str:
         return self.kv_cache_type_v or self.kv_cache_type
 
+    draft_k: int = 4
+
     def llama_server_args(self) -> list[str]:
         """Generate llama-server CLI args from this config."""
         args: list[str] = []
@@ -34,3 +36,11 @@ class ServingConfig:
             args.extend(["--model-draft", self.draft_model])
 
         return args
+
+
+@dataclass
+class RouterConfig:
+    """Configuration for the S2O multi-model router."""
+
+    routes: list[dict] = field(default_factory=list)  # [{"name": ..., "upstream": ..., "weight": 100}]
+    port: int = 8080

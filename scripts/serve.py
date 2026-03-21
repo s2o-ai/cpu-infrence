@@ -120,6 +120,9 @@ def serve(args):
     # Speculative decoding
     speculative = getattr(args, "speculative", False)
     draft_model = getattr(args, "draft_model", None)
+    draft_k = getattr(args, "draft_k", 4)
+    if speculative:
+        cmd.extend(["--draft-max", str(draft_k)])
     if speculative and draft_model:
         draft_path = find_model(draft_model)
         cmd.extend(["--model-draft", str(draft_path)])
@@ -209,6 +212,7 @@ def main():
                         help="KV cache quantization type (default: f16)")
     parser.add_argument("--speculative", action="store_true", help="Enable speculative decoding")
     parser.add_argument("--draft-model", default=None, help="Path to draft model for speculation")
+    parser.add_argument("--draft-k", type=int, default=4, help="Draft tokens per speculation step (default: 4)")
     parser.add_argument("--max-concurrent", type=int, default=16, help="Max concurrent requests (default: 16)")
     parser.add_argument("--proxy", action="store_true", help="Enable S2O admission control proxy")
     args = parser.parse_args()

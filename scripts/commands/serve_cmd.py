@@ -25,6 +25,7 @@ def serve(
     kv_quant: str = typer.Option(None, "--kv-quant", help="KV cache type: f16, q8_0, q4_0"),
     speculative: bool = typer.Option(False, "--speculative", help="Enable speculative decoding"),
     draft_model: str = typer.Option(None, "--draft-model", help="Draft model path for speculation"),
+    draft_k: int = typer.Option(4, "--draft-k", help="Draft tokens per speculation step (default: 4)"),
     max_concurrent: int = typer.Option(16, "--max-concurrent", help="Max concurrent requests"),
     proxy: bool = typer.Option(False, "--proxy", help="Enable S2O admission control proxy"),
 ):
@@ -33,6 +34,6 @@ def serve(
         model=model, host=host, port=port, ctx_size=ctx_size,
         parallel=parallel, threads=threads, api_key=api_key,
         kv_quant=kv_quant, speculative=speculative, draft_model=draft_model,
-        max_concurrent=max_concurrent, proxy=proxy,
+        draft_k=draft_k, max_concurrent=max_concurrent, proxy=proxy,
     )
     do_serve(args)

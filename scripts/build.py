@@ -56,7 +56,7 @@ def get_nproc():
     return os.cpu_count() or 4
 
 
-def build(clean=False, lut=False, arch=None):
+def build(clean=False, lut=False, openvino=False, arch=None):
     """Configure and build llama.cpp."""
     if not LLAMA_DIR.exists():
         print(f"ERROR: llama.cpp not found at {LLAMA_DIR}")
@@ -104,6 +104,16 @@ def build(clean=False, lut=False, arch=None):
         cmake_args.append("-DGGML_S2O_LUT=ON")
         print("S2O LUT kernels: ENABLED")
 
+    # Intel OpenVINO backend (iGPU, Arc, NPU)
+    if openvino:
+        cmake_args.append("-DGGML_OPENVINO=ON")
+        openvino_dir = os.environ.get("OPENVINO_DIR")
+        if openvino_dir:
+            cmake_args.append(f"-DOpenVINO_DIR={openvino_dir}")
+            print(f"OpenVINO: ENABLED (dir: {openvino_dir})")
+        else:
+            print("OpenVINO: ENABLED (using system install)")
+
     # Cross-compile for aarch64
     if arch == "aarch64":
         cmake_args.append("-DCMAKE_SYSTEM_PROCESSOR=aarch64")
@@ -148,8 +158,9 @@ def build(clean=False, lut=False, arch=None):
 if __name__ == "__main__":
     clean = "--clean" in sys.argv
     lut = "--lut" in sys.argv
+    openvino = "--openvino" in sys.argv
     arch = None
     for i, arg in enumerate(sys.argv):
         if arg == "--arch" and i + 1 < len(sys.argv):
             arch = sys.argv[i + 1]
-    build(clean=clean, lut=lut, arch=arch)
+    build(clean=clean, lut=lut, openvino=openvino, arch=arch)
